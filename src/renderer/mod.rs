@@ -6,6 +6,7 @@ use crossterm::{
 use crate::screen::Screen;
 use std::ops::Deref;
 use std::cmp::min;
+use std::ffi::CString;
 
 fn draw_rect(stdout: &mut Vec<u8>, x: u16, y: u16, w: u16, h: u16, max_w: u16, max_h: u16) {
     for x_iterator in x..(x+w) {

@@ -2,7 +2,7 @@ mod renderer;
 mod screen;
 
 use crossterm::{event::*, Result, terminal::size, QueueableCommand};
-use crate::screen::{Screen, SimpleBufferWindow};
+use crate::screen::{Screen, SimpleTerminalWindow};
 use crossterm::cursor::{DisableBlinking, EnableBlinking};
 use std::io::{Write, stdout, Read};
 use std::process::{exit, Command};
@@ -22,13 +22,12 @@ fn main() {
     let mut screen = Screen::new();
 
     enable_raw_mode();
-
     stdout
         .queue(DisableBlinking).unwrap()
         .queue(EnableMouseCapture).unwrap()
         .flush().unwrap();
 
-    screen.add_container(Rc::new(RefCell::new(Box::new(SimpleBufferWindow::new(
+    screen.add_container(Rc::new(RefCell::new(Box::new(SimpleTerminalWindow::new(
         5,
         5,
         60,
@@ -36,7 +35,7 @@ fn main() {
         "Test".to_string(),
     )))));
 
-    screen.add_container(Rc::new(RefCell::new(Box::new(SimpleBufferWindow::new(
+    screen.add_container(Rc::new(RefCell::new(Box::new(SimpleTerminalWindow::new(
         15,
         15,
         60,
@@ -44,7 +43,7 @@ fn main() {
         "Test2".to_string(),
     )))));
 
-    screen.add_container(Rc::new(RefCell::new(Box::new(SimpleBufferWindow::new(
+    screen.add_container(Rc::new(RefCell::new(Box::new(SimpleTerminalWindow::new(
         25,
         25,
         60,
@@ -67,7 +66,7 @@ fn main() {
             con.deref().borrow_mut().update_content();
         }
         renderer::redraw(&mut stdout, current_w, current_h, &screen);
-        while poll(Duration::from_millis(10)).unwrap() {
+        while poll(Duration::from_millis(0)).unwrap() {
             let event = read();
             if event.is_ok() {
                 match event.unwrap() {
