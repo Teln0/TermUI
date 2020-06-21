@@ -1,0 +1,11 @@
+[package]
+name = "termui"
+version = "0.1.0"
+authors = ["Teln0 <telnobynoyator@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+crossterm = "0.17.5"
+crossbeam = "0.7.3"
