@@ -39,22 +39,13 @@ pub struct CharacterCell {
 
 enum State {
     Normal,
-    // Waiting for any kind of byte
     ExpectingControlChar,
-    // We just got an ESC and expect a control sequence
     Csi,
-    // ESC [ Control Sequence Introducer
-    /* Multiparameter sequences are of the form KIND P_1 ; P_2 ; ... TERMINATION */
     Csi1(Vec<u8>),
-    // CSI with one buffer (CSI <num>) waiting for new buffer digits, a second buffer or a termination character
     Csi2(Vec<u8>, Vec<u8>),
-    // CSI with two buffers (CSI <num> ; <num>) as above
     Csi3(Vec<u8>, Vec<u8>, Vec<u8>),
-    // CSI with three buffers
     CsiQ(Vec<u8>),
-    // CSI followed by '?'
     Osc1(Vec<u8>),
-    // ESC ] Operating System Command
     Osc2(Vec<u8>, Vec<u8>),
 }
 
@@ -171,8 +162,6 @@ impl SimpleTerminalWindow {
                     self.grid.state = State::Normal;
                 }
                 (b'm', State::Csi3(ref buf1, ref buf2, ref buf3)) if buf1 == b"38" && buf2 == b"5" => {
-                    /* ESC [ m 38 ; 5 ; fg_color_byte m */
-                    /* Set only foreground color */
                     self.grid.fg_color = if let Ok(byte) =
                     u8::from_str_radix(unsafe { std::str::from_utf8_unchecked(buf3) }, 10)
                     {
@@ -184,8 +173,6 @@ impl SimpleTerminalWindow {
                     self.grid.state = State::Normal;
                 }
                 (b'm', State::Csi3(ref buf1, ref buf2, ref buf3)) if buf1 == b"48" && buf2 == b"5" => {
-                    /* ESC [ m 48 ; 5 ; fg_color_byte m */
-                    /* Set only background color */
                     self.grid.bg_color = if let Ok(byte) =
                     u8::from_str_radix(unsafe { std::str::from_utf8_unchecked(buf3) }, 10)
                     {
@@ -197,7 +184,6 @@ impl SimpleTerminalWindow {
                     self.grid.state = State::Normal;
                 }
                 (b'D', State::Csi1(buf)) => {
-                    // ESC[{buf}D   CSI Cursor Backward {buf} Times
                     let offset = unsafe { std::str::from_utf8_unchecked(buf) }
                         .parse::<usize>()
                         .unwrap();
