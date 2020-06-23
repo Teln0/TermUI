@@ -25,6 +25,8 @@ use core::ptr;
 use std::fs::File;
 use libc::{TIOCSCTTY, TIOCSWINSZ};
 use term::Attr;
+use vte::{Parser, Perform};
+use std::alloc::handle_alloc_error;
 
 ioctl_write_ptr_bad!(set_window_size, TIOCSWINSZ, Winsize);
 ioctl_none_bad!(set_controlling_terminal, TIOCSCTTY);
@@ -55,6 +57,8 @@ struct EmbedGrid {
     state: State,
     fg_color: u8,
     bg_color: u8,
+    width: usize,
+    height: usize
 }
 
 pub struct SimpleTerminalWindow {
@@ -71,127 +75,48 @@ pub struct SimpleTerminalWindow {
     master_fd: File,
     child_pid: Pid,
     queue: Arc<SegQueue<String>>,
+    vte_parser: Parser
+}
+
+impl Perform for EmbedGrid {
+    fn print(&mut self, c: char) {
+        self.grid[self.cursor.0 + self.cursor.1 * self.width as usize].ch = c;
+        self.cursor.0 += 1;
+    }
+
+    fn execute(&mut self, byte: u8) {
+
+    }
+
+    fn hook(&mut self, params: &[i64], intermediates: &[u8], ignore: bool, action: char) {
+
+    }
+
+    fn put(&mut self, byte: u8) {
+
+    }
+
+    fn unhook(&mut self) {
+
+    }
+
+    fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
+
+    }
+
+    fn csi_dispatch(&mut self, params: &[i64], intermediates: &[u8], ignore: bool, action: char) {
+
+    }
+
+    fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8) {
+
+    }
 }
 
 impl SimpleTerminalWindow {
     pub fn add_string(&mut self, s: String) {
         for c in s.bytes() {
-            match (c, &mut self.grid.state) {
-                (b'\x1b', State::Normal) => {
-                    self.grid.state = State::ExpectingControlChar;
-                }
-                (b']', State::ExpectingControlChar) => {
-                    let buf1 = Vec::new();
-                    self.grid.state = State::Osc1(buf1);
-                }
-                (b'[', State::ExpectingControlChar) => {
-                    self.grid.state = State::Csi;
-                }
-                (b'H', State::Csi) => {
-                    self.grid.cursor = (0, 0);
-                    self.grid.state = State::Normal;
-                }
-
-                (b'\r', State::Normal) => {
-                    // carriage return x-> 0
-                    self.grid.cursor.0 = 0;
-                }
-                (b'\n', State::Normal) => {
-                    // newline y -> y + 1
-                    if self.grid.cursor.1 + 1 < self.height as usize {
-                        self.grid.cursor.1 += 1;
-                    }
-                }
-                (0x08, State::Normal) => {
-                    if self.grid.cursor.0 > 0 {
-                        self.grid.cursor.0 -= 1;
-                    }
-                }
-                (c, State::Normal) => {
-                    self.grid.grid[self.grid.cursor.0 + self.grid.cursor.1 * self.width as usize].ch = c as char;
-                    self.grid.grid[self.grid.cursor.0 + self.grid.cursor.1 * self.width as usize].fg = self.grid.fg_color;
-                    self.grid.grid[self.grid.cursor.0 + self.grid.cursor.1 * self.width as usize].bg = self.grid.bg_color;
-                    self.grid.cursor.0 += 1;
-                }
-                (b'H', State::Csi2(ref y, ref x)) => {
-                    let orig_x = unsafe { std::str::from_utf8_unchecked(x) }
-                        .parse::<usize>()
-                        .unwrap_or(1);
-                    let orig_y = unsafe { std::str::from_utf8_unchecked(y) }
-                        .parse::<usize>()
-                        .unwrap_or(1);
-
-                    if orig_x - 1 <= self.width as usize && orig_y - 1 <= self.height as usize {
-                        self.grid.cursor.0 = orig_x - 1;
-                        self.grid.cursor.1 = orig_y - 1;
-                    } else {
-                        eprintln!(
-                            "[error] terminal_size = {:?}, cursor = {:?} but cursor set to  [{},{}]",
-                            (self.width, self.height), self.grid.cursor, orig_x, orig_y
-                        );
-                    }
-
-                    self.grid.state = State::Normal;
-                }
-                (b'm', State::Csi1(ref buf1)) => {
-                    match buf1.as_slice() {
-                        b"30" => self.grid.fg_color = 0,
-                        b"31" => self.grid.fg_color = 1,
-                        b"32" => self.grid.fg_color = 2,
-                        b"33" => self.grid.fg_color = 3,
-                        b"34" => self.grid.fg_color = 4,
-                        b"35" => self.grid.fg_color = 5,
-                        b"36" => self.grid.fg_color = 6,
-                        b"37" => self.grid.fg_color = 7,
-
-                        b"39" => self.grid.fg_color = 8,
-                        b"40" => self.grid.bg_color = 9,
-                        b"41" => self.grid.bg_color = 10,
-                        b"42" => self.grid.bg_color = 11,
-                        b"43" => self.grid.bg_color = 12,
-                        b"44" => self.grid.bg_color = 13,
-                        b"45" => self.grid.bg_color = 15,
-                        b"46" => self.grid.bg_color = 16,
-                        b"47" => self.grid.bg_color = 17,
-
-                        b"49" => self.grid.bg_color = 15,
-                        _ => {}
-                    }
-                    self.grid.grid[self.grid.cursor.0 + self.grid.cursor.1 * self.width as usize].fg = self.grid.fg_color;
-                    self.grid.grid[self.grid.cursor.0 + self.grid.cursor.1 * self.width as usize].bg = self.grid.bg_color;
-                    self.grid.state = State::Normal;
-                }
-                (b'm', State::Csi3(ref buf1, ref buf2, ref buf3)) if buf1 == b"38" && buf2 == b"5" => {
-                    self.grid.fg_color = if let Ok(byte) =
-                    u8::from_str_radix(unsafe { std::str::from_utf8_unchecked(buf3) }, 10)
-                    {
-                        byte
-                    } else {
-                        0
-                    };
-                    self.grid.grid[self.grid.cursor.0 + self.grid.cursor.1 * self.width as usize].fg = self.grid.fg_color;
-                    self.grid.state = State::Normal;
-                }
-                (b'm', State::Csi3(ref buf1, ref buf2, ref buf3)) if buf1 == b"48" && buf2 == b"5" => {
-                    self.grid.bg_color = if let Ok(byte) =
-                    u8::from_str_radix(unsafe { std::str::from_utf8_unchecked(buf3) }, 10)
-                    {
-                        byte
-                    } else {
-                        0
-                    };
-                    self.grid.grid[self.grid.cursor.0 + self.grid.cursor.1 * self.width as usize].bg = self.grid.bg_color;
-                    self.grid.state = State::Normal;
-                }
-                (b'D', State::Csi1(buf)) => {
-                    let offset = unsafe { std::str::from_utf8_unchecked(buf) }
-                        .parse::<usize>()
-                        .unwrap();
-                    self.grid.cursor.0 = self.grid.cursor.0.saturating_sub(offset);
-                    self.grid.state = State::Normal;
-                }
-                _ => {}
-            }
+            self.vte_parser.advance(&mut self.grid, c);
         }
     }
 }
@@ -280,6 +205,8 @@ impl Container for SimpleTerminalWindow {
         };
         let master_fd = self.master_fd.as_raw_fd();
         unsafe { set_window_size(master_fd, &winsize).unwrap() };
+        self.grid.width = width as usize;
+        self.grid.height = height as usize;
 
         nix::sys::signal::kill(self.child_pid, nix::sys::signal::SIGWINCH).unwrap();
     }
@@ -397,7 +324,6 @@ impl SimpleTerminalWindow {
                     }
 
                     exit(-1);
-                    panic!();
                 }
             }
             Err(e) => panic!(e),
@@ -437,6 +363,8 @@ impl SimpleTerminalWindow {
             scroll_y: 0,
             grid: EmbedGrid {
                 cursor: (0, 0),
+                width: width as usize,
+                height: height as usize,
                 bg_color: 0,
                 fg_color: 15,
                 grid: vec![CharacterCell {
@@ -453,6 +381,7 @@ impl SimpleTerminalWindow {
             master_fd: m,
             child_pid,
             queue,
+            vte_parser: Parser::new()
         };
     }
 }

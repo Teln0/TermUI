@@ -15,8 +15,6 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::process::Stdio;
 
-//extern crate ctrlc;
-
 fn main() {
     let mut stdout = std::io::stdout();
     let mut screen = Screen::new();
