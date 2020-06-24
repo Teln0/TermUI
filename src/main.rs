@@ -30,7 +30,7 @@ fn main() {
         5,
         60,
         15,
-        "Test".to_string(),
+        "1".to_string(),
     )))));
 
     screen.add_container(Rc::new(RefCell::new(Box::new(SimpleTerminalWindow::new(
@@ -38,7 +38,7 @@ fn main() {
         15,
         60,
         15,
-        "Test2".to_string(),
+        "2".to_string(),
     )))));
 
     screen.add_container(Rc::new(RefCell::new(Box::new(SimpleTerminalWindow::new(
@@ -46,7 +46,7 @@ fn main() {
         25,
         60,
         15,
-        "Test3".to_string(),
+        "3".to_string(),
     )))));
 
     let size = size();

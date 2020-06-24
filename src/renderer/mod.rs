@@ -25,21 +25,14 @@ fn draw_rect(stdout: &mut Vec<u8>, x: u16, y: u16, w: u16, h: u16, max_w: u16, m
     }
 }
 
-fn render_text(stdout: &mut Vec<u8>, x: u16, y: u16, max_w: u16, max_h: u16, text: String) {
+fn render_text(stdout: &mut Vec<u8>, x: u16, y: u16, max_h: u16, text: String) {
     let lines: Vec<&str> = text.split("\n").collect();
     let mut i = 0;
     for mut line in lines {
         if i > max_h {
             return;
         }
-        let mut line_str;
-        if line.len() > max_w as usize {
-            line_str = line.to_string();
-            line_str.truncate(max_w as usize);
-        }
-        else {
-            line_str = line.to_string();
-        }
+        let line_str = line.to_string();
 
         stdout
             .queue(cursor::MoveTo(x, y + i)).unwrap()
@@ -61,13 +54,24 @@ pub fn redraw(stdout: &mut Stdout, w: u16, h: u16, screen: &Screen) -> Result<()
         let con = con.deref().borrow();
         // Draw the container border around the window
         draw_rect(&mut stdout, con.get_x() - 1, con.get_y() - 1, con.get_width() + 2, con.get_height() + 2, w, h);
-        // Draw the container title
+        // Draw the container title info
+        let mut info = "".to_string();
         let title = con.get_title();
         if title.is_some() {
-            stdout
-                .queue(cursor::MoveTo(con.get_x(), con.get_y() - 1)).unwrap()
-                .queue(crossterm::style::Print(con.get_title().unwrap()));
+            info.push_str(title.unwrap());
+            info.push(' ');
         }
+        info.push_str(format!("W: {} H: {} X: {} Y: {} Cursor: {:?} {}",
+                              con.get_width(),
+                              con.get_height(),
+                              con.get_x(),
+                              con.get_y(),
+                              con.get_cursor(),
+                              con.get_printed_chars()
+        ).as_str());
+        stdout
+            .queue(cursor::MoveTo(con.get_x(), con.get_y() - 1)).unwrap()
+            .queue(crossterm::style::Print(info)).unwrap();
         // Draw the container's content
         let mut con_width = con.get_width();
         let mut con_height = con.get_height();
@@ -82,7 +86,7 @@ pub fn redraw(stdout: &mut Stdout, w: u16, h: u16, screen: &Screen) -> Result<()
             if con.get_y() + con_height > h {
                 con_height -= con.get_y() + con_height - h;
             }
-            render_text(&mut stdout, con.get_x(), con.get_y(), con_width, con_height - 1, con.get_content());
+            render_text(&mut stdout, con.get_x(), con.get_y(), con_height - 1, con.get_content());
         }
         // Draw the resize handles
         if con.get_x() + con.get_width() < w {
@@ -102,7 +106,7 @@ pub fn redraw(stdout: &mut Stdout, w: u16, h: u16, screen: &Screen) -> Result<()
     stdout
         .queue(cursor::MoveTo(2, 0)).unwrap()
         .queue(crossterm::style::Print(info_string));
-
+    // Render dev console
     s.write_all(&stdout);
     Ok(())
 }

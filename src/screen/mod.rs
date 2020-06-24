@@ -27,6 +27,7 @@ use libc::{TIOCSCTTY, TIOCSWINSZ};
 use term::Attr;
 use vte::{Parser, Perform};
 use std::alloc::handle_alloc_error;
+use std::thread::current;
 
 ioctl_write_ptr_bad!(set_window_size, TIOCSWINSZ, Winsize);
 ioctl_none_bad!(set_controlling_terminal, TIOCSCTTY);
@@ -39,22 +40,10 @@ pub struct CharacterCell {
     pub attrs: Attr,
 }
 
-enum State {
-    Normal,
-    ExpectingControlChar,
-    Csi,
-    Csi1(Vec<u8>),
-    Csi2(Vec<u8>, Vec<u8>),
-    Csi3(Vec<u8>, Vec<u8>, Vec<u8>),
-    CsiQ(Vec<u8>),
-    Osc1(Vec<u8>),
-    Osc2(Vec<u8>, Vec<u8>),
-}
-
 struct EmbedGrid {
+    printed_chars: usize,
     cursor: (usize, usize),
     grid: Vec<CharacterCell>,
-    state: State,
     fg_color: u8,
     bg_color: u8,
     width: usize,
@@ -80,36 +69,270 @@ pub struct SimpleTerminalWindow {
 
 impl Perform for EmbedGrid {
     fn print(&mut self, c: char) {
+        self.printed_chars += 1;
+
         self.grid[self.cursor.0 + self.cursor.1 * self.width as usize].ch = c;
+        self.grid[self.cursor.0 + self.cursor.1 * self.width as usize].fg = self.fg_color;
+        self.grid[self.cursor.0 + self.cursor.1 * self.width as usize].bg = self.bg_color;
+
         self.cursor.0 += 1;
     }
 
     fn execute(&mut self, byte: u8) {
-
+        match byte {
+            0x08 => {
+                if self.cursor.0 > 0 {
+                    self.cursor.0 -= 1;
+                }
+            },
+            0x0A => {
+                if self.cursor.1 <= self.height {
+                    self.cursor.1 += 1;
+                }
+            }
+            0x0D => {
+                self.cursor.0 = 0;
+            }
+            0x07 => {
+                print!("\x07");
+            }
+            c => {
+                println!("      {:?}", c as char);
+                panic!();
+            }
+        };
     }
 
     fn hook(&mut self, params: &[i64], intermediates: &[u8], ignore: bool, action: char) {
-
+        panic!();
     }
 
     fn put(&mut self, byte: u8) {
-
+        panic!();
     }
 
     fn unhook(&mut self) {
-
+        panic!();
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
-
+        panic!();
     }
 
     fn csi_dispatch(&mut self, params: &[i64], intermediates: &[u8], ignore: bool, action: char) {
+        return;
+        match action {
+            'A' => { // Cursor Up
+                if (self.cursor.1 as i64) > params[0] {
+                    self.cursor.1 -= params[0] as usize;
+                }
+                else {
+                    self.cursor.1 = 0;
+                }
+            },
+            'B' => { // Cursor Down
+                if (self.height as i64) > self.cursor.1 as i64 + params[0] {
+                    self.cursor.1 += params[0] as usize;
+                }
+                else {
+                    self.cursor.1 = self.height - 1;
+                }
+            },
+            'D' => { // Cursor Back
+                if (self.cursor.0 as i64) > params[0] {
+                    self.cursor.0 -= params[0] as usize;
+                }
+                else {
+                    self.cursor.0 = 0;
+                }
+            },
+            'C' => { // Cursor Forwards
+                if (self.width as i64) > self.cursor.0 as i64 + params[0] {
+                    self.cursor.0 += params[0] as usize;
+                }
+                else {
+                    self.cursor.0 = self.height - 0;
+                }
+            },
+            'E' => { // Go down then to the beginning of the line
+                if (self.height as i64) > self.cursor.1 as i64 + params[0] {
+                    self.cursor.1 += params[0] as usize;
+                }
+                else {
+                    self.cursor.1 = self.height - 1;
+                }
+                self.cursor.0 = 0;
+            },
+            'F' => { // Go up then to the beginning of the line
+                if (self.cursor.1 as i64) > params[0] {
+                    self.cursor.1 -= params[0] as usize;
+                }
+                else {
+                    self.cursor.1 = 0;
+                }
+                self.cursor.0 = 0;
+            },
+            'G' => { // Set cursor horizontal pos
+                if params[0] < self.width as i64 {
+                    if params[0] > 0 {
+                        self.cursor.0 = params[0] as usize;
+                    }
+                    else {
+                        self.cursor.0 = 0;
+                    }
+                }
+                else {
+                    self.cursor.0 = self.width - 1;
+                }
+            },
+            'H' => { // Set cursor pos
+                let y = params[0] - 1;
+                let x = params[1] - 1;
 
+                if x <= self.width as i64 {
+                    if x > 0 {
+                        self.cursor.0 = x as usize;
+                    }
+                    else {
+                        self.cursor.0 = 0;
+                    }
+                }
+                else {
+                    self.cursor.0 = self.width - 1;
+                }
+
+                if y <= self.height as i64 {
+                    if y > 0 {
+                        self.cursor.1 = y as usize;
+                    }
+                    else {
+                        self.cursor.1 = 0;
+                    }
+                }
+                else {
+                    self.cursor.1 = self.height - 1;
+                }
+            },
+            'J' => {
+                match params[0] {
+                    0 => {
+                        let index = self.cursor.0 + self.cursor.1 * self.width;
+                        let end = self.width * self.height;
+                        for i in index..end {
+                            self.grid[i] = CharacterCell {
+                                fg: 37,
+                                bg: 40,
+                                ch: ' ',
+                                attrs: Attr::BackgroundColor(40)
+                            }
+                        }
+                    },
+                    1 => {
+                        let index = 0;
+                        let end = self.cursor.0 + self.cursor.1 * self.width + 1;
+                        for i in index..end {
+                            self.grid[i] = CharacterCell {
+                                fg: 37,
+                                bg: 40,
+                                ch: ' ',
+                                attrs: Attr::BackgroundColor(40)
+                            }
+                        }
+                    },
+                    2 | 3 => {
+                        let end = self.cursor.0 + self.cursor.1 * self.width + 1;
+                        for i in 0..end {
+                            self.grid[i] = CharacterCell {
+                                fg: 37,
+                                bg: 40,
+                                ch: ' ',
+                                attrs: Attr::BackgroundColor(40)
+                            }
+                        }
+                    }
+                    _ => {
+
+                    }
+                }
+            }
+            'm' => { // Select Graphic Rendition
+                for i in params {
+                    match i {
+                        30 => { // FG black
+                            self.fg_color = 30;
+                        },
+                        31 => { // FG red
+                            self.fg_color = 31;
+                        },
+                        32 => { // FG green
+                            self.fg_color = 32;
+                        },
+                        33 => { // FG yellow
+                            self.fg_color = 33;
+                        },
+                        34 => { // FG blue
+                            self.fg_color = 34;
+                        },
+                        35 => { // FG magenta
+                            self.fg_color = 35;
+                        },
+                        36 => { // FG cyan
+                            self.fg_color = 36;
+                        },
+                        37 => { // FG white
+                            self.fg_color = 37;
+                        },
+                        39 => { // Default FG color (white)
+                            self.fg_color = 37;
+                        },
+
+                        40 => { // FG black
+                            self.bg_color = 40;
+                        },
+                        41 => { // BG red
+                            self.bg_color = 41;
+                        },
+                        42 => { // BG green
+                            self.bg_color = 42;
+                        },
+                        43 => { // BG yellow
+                            self.bg_color = 43;
+                        },
+                        44 => { // BG blue
+                            self.bg_color = 44;
+                        },
+                        45 => { // BG magenta
+                            self.bg_color = 45;
+                        },
+                        46 => { // BG cyan
+                            self.bg_color = 46;
+                        },
+                        47 => { // BG white
+                            self.bg_color = 47;
+                        },
+                        49 => { // Default BG color (black)
+                            self.bg_color = 40;
+                        }
+
+                        0 => { // Reset all
+                            self.fg_color = 37;
+                            self.bg_color = 40;
+                        }
+                        _ => {
+
+                        }
+                    }
+                }
+            }
+            _ => {
+                panic!();
+            }
+        }
     }
 
     fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8) {
-
+        println!("                     {:?}                ", byte);
+        panic!();
     }
 }
 
@@ -128,9 +351,11 @@ pub trait Container {
     fn get_y(&self) -> u16;
     fn get_width(&self) -> u16;
     fn get_height(&self) -> u16;
+    fn get_cursor(&self) -> (usize, usize);
     fn get_title(&self) -> Option<&str>;
     fn input(&mut self, input: String);
     fn set_size(&mut self, width: u16, height: u16);
+    fn get_printed_chars(&self) -> usize;
 
     fn on_scroll_y(&mut self, amount: i16);
     fn on_mouse_down(&mut self, x: u16, y: u16);
@@ -153,10 +378,28 @@ impl Container for SimpleTerminalWindow {
 
     fn get_content(&self) -> String {
         let mut result = "".to_string();
+        let mut prev_color_fg: u8 = self.grid.grid[0].fg;
+        let mut prev_color_bg: u8 = self.grid.grid[0].bg;
         for i in 0..self.height {
             let slice = &self.grid.grid[((i * self.width) as usize)..(((i + 1) * self.width) as usize)];
+            let mut x = 0;
             for c in slice {
+                let foreground = c.fg;
+                let mut background = c.bg;
+                if x == self.grid.cursor.0 && i as usize == self.grid.cursor.1 {
+                    background = 47;
+                }
+                if foreground != prev_color_fg {
+                    result.push_str(format!("\x1B[{}m", foreground).as_str());
+                    prev_color_fg = foreground;
+                }
+                if background != prev_color_bg {
+                    result.push_str(format!("\x1B[{}m", background).as_str());
+                    prev_color_bg = background;
+                }
+
                 result.push(c.ch);
+                x += 1;
             }
             result.push('\n');
         }
@@ -179,6 +422,10 @@ impl Container for SimpleTerminalWindow {
         return self.height;
     }
 
+    fn get_cursor(&self) -> (usize, usize) {
+        return self.grid.cursor;
+    }
+
     fn get_title(&self) -> Option<&str> {
         return Some(&self.title);
     }
@@ -190,13 +437,16 @@ impl Container for SimpleTerminalWindow {
     fn set_size(&mut self, width: u16, height: u16) {
         self.width = width;
         self.height = height;
-        self.grid.grid = vec![CharacterCell {
-            attrs: Attr::BackgroundColor(0),
-            ch: ' ',
-            bg: 0,
-            fg: 15,
-        }; width as usize * height as usize];
+        self.grid.width = width as usize;
+        self.grid.height = height as usize;
+        self.grid.cursor = (0, 0);
 
+        self.grid.grid = vec![CharacterCell {
+            attrs: Attr::BackgroundColor(40),
+            ch: ' ',
+            bg: 40,
+            fg: 37,
+        }; width as usize * height as usize];
         let winsize = Winsize {
             ws_row: self.height,
             ws_col: self.width,
@@ -204,11 +454,13 @@ impl Container for SimpleTerminalWindow {
             ws_ypixel: 0,
         };
         let master_fd = self.master_fd.as_raw_fd();
-        unsafe { set_window_size(master_fd, &winsize).unwrap() };
-        self.grid.width = width as usize;
-        self.grid.height = height as usize;
 
+        unsafe { set_window_size(master_fd, &winsize).unwrap() };
         nix::sys::signal::kill(self.child_pid, nix::sys::signal::SIGWINCH).unwrap();
+    }
+
+    fn get_printed_chars(&self) -> usize {
+        return self.grid.printed_chars;
     }
 
     fn on_scroll_y(&mut self, amount: i16) {
@@ -272,7 +524,19 @@ impl Container for SimpleTerminalWindow {
                 self.master_fd.write(&['\n' as u8]).unwrap();
             }
             KeyCode::Backspace => {
-                self.master_fd.write((&[0x08 as u8, ' ' as u8, 0x08 as u8])).unwrap();
+                self.master_fd.write((&[0x08 as u8])).unwrap();
+            }
+            KeyCode::Left => {
+                self.master_fd.write_all(&[0x1B as u8, '[' as u8, 'D' as u8]);
+            }
+            KeyCode::Right => {
+                self.master_fd.write_all(&[0x1B as u8, '[' as u8, 'C' as u8]);
+            }
+            KeyCode::Up => {
+                self.master_fd.write_all(&[0x1B as u8, '[' as u8, 'A' as u8]);
+            }
+            KeyCode::Down => {
+                self.master_fd.write_all(&[0x1B as u8, '[' as u8, 'B' as u8]);
             }
             _ => {}
         }
@@ -370,10 +634,10 @@ impl SimpleTerminalWindow {
                 grid: vec![CharacterCell {
                     attrs: Attr::BackgroundColor(0),
                     ch: ' ',
-                    bg: 0,
-                    fg: 15,
+                    bg: 40,
+                    fg: 37,
                 }; width as usize * height as usize],
-                state: State::Normal,
+                printed_chars: 0
             },
             last_mouse_down_pos_coords: (0, 0),
             last_size: (width, height),
@@ -387,13 +651,15 @@ impl SimpleTerminalWindow {
 }
 
 pub struct Screen {
-    pub containers: Vec<Rc<RefCell<Box<dyn Container>>>>
+    pub containers: Vec<Rc<RefCell<Box<dyn Container>>>>,
+    pub dev_console: Vec<String>
 }
 
 impl Screen {
     pub fn new() -> Screen {
         return Screen {
-            containers: vec![]
+            containers: vec![],
+            dev_console: vec![]
         };
     }
 
