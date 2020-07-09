@@ -1,19 +1,19 @@
 mod renderer;
 mod screen;
 
-use crossterm::{event::*, Result, terminal::size, QueueableCommand};
 use crate::screen::{Screen, SimpleTerminalWindow};
 use crossterm::cursor::{DisableBlinking, EnableBlinking};
-use std::io::{Write, stdout, Read};
-use std::process::{exit, Command};
-use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
-use std::ops::Deref;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use crossterm::{event::*, terminal::size, QueueableCommand, Result};
 use std::borrow::Borrow;
 use std::cell::RefCell;
+use std::io::{stdout, Read, Write};
+use std::ops::Deref;
+use std::process::Stdio;
+use std::process::{exit, Command};
 use std::rc::Rc;
 use std::thread::sleep;
 use std::time::Duration;
-use std::process::Stdio;
 
 fn main() {
     let mut stdout = std::io::stdout();
@@ -21,9 +21,12 @@ fn main() {
 
     enable_raw_mode();
     stdout
-        .queue(DisableBlinking).unwrap()
-        .queue(EnableMouseCapture).unwrap()
-        .flush().unwrap();
+        .queue(DisableBlinking)
+        .unwrap()
+        .queue(EnableMouseCapture)
+        .unwrap()
+        .flush()
+        .unwrap();
 
     screen.add_container(Rc::new(RefCell::new(Box::new(SimpleTerminalWindow::new(
         5,
@@ -76,19 +79,39 @@ fn main() {
                         match mouseEvent {
                             MouseEvent::Down(mouse_button, x, y, key_modifiers) => {
                                 screen.check_top_container(x, y);
-                                screen.get_top_container().unwrap().borrow_mut().on_mouse_down(x, y);
+                                screen
+                                    .get_top_container()
+                                    .unwrap()
+                                    .borrow_mut()
+                                    .on_mouse_down(x, y);
                             }
                             MouseEvent::Up(mouse_button, x, y, key_modifiers) => {
-                                screen.get_top_container().unwrap().borrow_mut().on_mouse_up(x, y);
+                                screen
+                                    .get_top_container()
+                                    .unwrap()
+                                    .borrow_mut()
+                                    .on_mouse_up(x, y);
                             }
                             MouseEvent::Drag(mouse_button, x, y, key_modifiers) => {
-                                screen.get_top_container().unwrap().borrow_mut().on_mouse_drag(x, y);
+                                screen
+                                    .get_top_container()
+                                    .unwrap()
+                                    .borrow_mut()
+                                    .on_mouse_drag(x, y);
                             }
                             MouseEvent::ScrollUp(x, y, key_modifiers) => {
-                                screen.get_top_container().unwrap().borrow_mut().on_scroll_y(-1);
+                                screen
+                                    .get_top_container()
+                                    .unwrap()
+                                    .borrow_mut()
+                                    .on_scroll_y(-1);
                             }
                             MouseEvent::ScrollDown(x, y, key_modifiers) => {
-                                screen.get_top_container().unwrap().borrow_mut().on_scroll_y(1);
+                                screen
+                                    .get_top_container()
+                                    .unwrap()
+                                    .borrow_mut()
+                                    .on_scroll_y(1);
                             }
                             _ => {}
                         };
@@ -97,13 +120,19 @@ fn main() {
                         if key_event.code == KeyCode::Char('c') {
                             if key_event.modifiers == KeyModifiers::CONTROL {
                                 stdout
-                                    .queue(EnableBlinking).unwrap()
-                                    .queue(DisableMouseCapture).unwrap();
+                                    .queue(EnableBlinking)
+                                    .unwrap()
+                                    .queue(DisableMouseCapture)
+                                    .unwrap();
                                 disable_raw_mode().unwrap();
                             }
                         }
 
-                        screen.get_top_container().unwrap().borrow_mut().on_key(key_event.code, key_event.modifiers);
+                        screen
+                            .get_top_container()
+                            .unwrap()
+                            .borrow_mut()
+                            .on_key(key_event.code, key_event.modifiers);
                     }
                     _ => {}
                 }
